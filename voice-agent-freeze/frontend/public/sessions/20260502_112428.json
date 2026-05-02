@@ -1,0 +1,96 @@
+{
+  "recording_started_at": 1777701209.8964522,
+  "recording_ended_at": 1777701268.387521,
+  "turns": [
+    {
+      "id": "7ec537ac-440b-40de-b219-b774b257dc3a",
+      "role": "user",
+      "content": "Hello?",
+      "start_ts": 1777701213.578,
+      "end_ts": 1777701216.962018,
+      "latency": null,
+      "interrupted": null
+    },
+    {
+      "id": "47cdca26-39ad-4300-812b-d1a70dc2966b",
+      "role": "assistant",
+      "content": "Hello there! How can I help you today?",
+      "start_ts": 1777701218.719675,
+      "end_ts": 1777701221.869791,
+      "latency": 4.963122129440308,
+      "interrupted": false
+    },
+    {
+      "id": "04c0bd17-b92f-4549-88bf-6e701a347fa4",
+      "role": "user",
+      "content": "Yeah.",
+      "start_ts": 1777701224.437,
+      "end_ts": 1777701224.589172,
+      "latency": null,
+      "interrupted": null
+    },
+    {
+      "id": "32ea6238-37dc-4c70-8327-7f865cf967c0",
+      "role": "assistant",
+      "content": "",
+      "start_ts": null,
+      "end_ts": 1777701224.639168,
+      "latency": null,
+      "interrupted": true
+    },
+    {
+      "id": "aebd4102-7218-40af-bbdd-e0d87d4a59e8",
+      "role": "user",
+      "content": "Can I know about Virat Kohli?",
+      "start_ts": 1777701224.635,
+      "end_ts": 1777701226.390145,
+      "latency": null,
+      "interrupted": null
+    },
+    {
+      "id": "9c315f20-f32a-4e4a-b43a-6c566b2289fb",
+      "role": "assistant",
+      "content": "Absolutely! Virat Kohli is a name that resonates with cricket fans worldwide. He's an Indian international cricketer, widely regarded as one of the greatest batsmen of all time. He's",
+      "start_ts": 1777701227.874195,
+      "end_ts": 1777701240.322252,
+      "latency": 1.914712905883789,
+      "interrupted": true
+    },
+    {
+      "id": "e0abb635-e7ac-41fb-88ed-32ed8a45f2ea",
+      "role": "user",
+      "content": "Okay.",
+      "start_ts": 1777701240.316,
+      "end_ts": 1777701244.390562,
+      "latency": null,
+      "interrupted": null
+    },
+    {
+      "id": "0f509531-3a08-41da-a815-98e53c396650",
+      "role": "assistant",
+      "content": "",
+      "start_ts": null,
+      "end_ts": 1777701244.417677,
+      "latency": null,
+      "interrupted": true
+    },
+    {
+      "id": "69db5e4c-f5df-472e-8e7e-6c9faac848c2",
+      "role": "user",
+      "content": "Who's the winner of recent t twenty World Cup?",
+      "start_ts": 1777701244.408,
+      "end_ts": 1777701244.56097,
+      "latency": null,
+      "interrupted": null
+    },
+    {
+      "id": "45544528-fa14-46f7-b67d-e19434a61d3f",
+      "role": "user",
+      "content": "Hello?",
+      "start_ts": 1777701259.497,
+      "end_ts": 1777701260.218394,
+      "latency": null,
+      "interrupted": null
+    }
+  ]
+}

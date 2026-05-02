@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DEFAULT_FREEZE_MIN_GAP_SECONDS,
+  detectFreezeTail,
+  freezeOverlayPercentages,
+} from "@/lib/freeze";
 import { SESSION_RECORDING_ID } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
@@ -25,39 +30,27 @@ type PlaybackTurn = Turn & { start: number; end: number };
 
 type TranscriptPayload =
   | Turn[]
-  | {
-      recording_started_at?: number | null;
-      recording_ended_at?: number | null;
-      turns?: Turn[];
-    };
+  | { recording_started_at?: number | null; recording_ended_at?: number | null; turns?: Turn[] };
 
-type ParsedSession = {
-  turns: PlaybackTurn[];
-  timelineBaseUnix: number;
-  recordingEndedAtUnix: number | null;
-};
-
-const FREEZE_MIN_DURATION_SECONDS = 5;
+type ParsedSession = { turns: PlaybackTurn[]; recordingEndedAtUnix: number | null };
 
 const ms = (s: number) => `${Math.round(s * 1000)}ms`;
 
-const formatTime = (seconds: number) => {
+function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
-  const sec = Math.floor(seconds % 60);
-  const fraction = Math.floor((seconds % 1) * 1000);
-  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.${String(fraction).padStart(3, "0")}`;
-};
+  const s = Math.floor(seconds % 60);
+  const f = Math.floor((seconds % 1) * 1000);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(f).padStart(3, "0")}`;
+}
 
-function parseTranscriptPayload(payload: TranscriptPayload): ParsedSession | null {
+function parseTranscript(payload: TranscriptPayload): ParsedSession | null {
   const raw = Array.isArray(payload) ? payload : (payload.turns ?? []);
-  if (raw.length === 0) return null;
-
   const withStart = raw.filter((t) => t.start_ts !== null);
-  if (withStart.length === 0) return null;
+  if (!withStart.length) return null;
 
-  const recordingStartedAtUnix = !Array.isArray(payload) ? payload.recording_started_at ?? null : null;
-  const recordingEndedAtUnix = !Array.isArray(payload) ? payload.recording_ended_at ?? null : null;
-  const base = recordingStartedAtUnix ?? (withStart[0].start_ts as number);
+  const meta = Array.isArray(payload) ? null : payload;
+  const recordingEndedAtUnix = meta?.recording_ended_at ?? null;
+  const base = meta?.recording_started_at ?? (withStart[0].start_ts as number);
 
   const turns = withStart
     .map((turn, i) => {
@@ -77,29 +70,7 @@ function parseTranscriptPayload(payload: TranscriptPayload): ParsedSession | nul
     .filter((t) => Number.isFinite(t.start) && Number.isFinite(t.end))
     .sort((a, b) => a.start - b.start);
 
-  return turns.length ? { turns, timelineBaseUnix: base, recordingEndedAtUnix } : null;
-}
-
-function freezeOverlay(
-  turns: PlaybackTurn[],
-  recordingEndedAtUnix: number | null,
-  timelineBaseUnix: number,
-  audioDuration: number
-): { freezeSeconds: number; overlayLeftPct: number; overlayWidthPct: number } | null {
-  if (recordingEndedAtUnix == null || !turns.length || audioDuration <= 0) return null;
-  const last = turns[turns.length - 1];
-  if (last.role !== "user") return null;
-
-  const freezeSeconds = recordingEndedAtUnix - last.end_ts;
-  if (freezeSeconds <= FREEZE_MIN_DURATION_SECONDS) return null;
-
-  const freezeEndRel = recordingEndedAtUnix - timelineBaseUnix;
-  const span = Math.max(0, Math.min(freezeEndRel, audioDuration) - last.end);
-  if (span <= 0) return null;
-
-  const left = Math.min(100, Math.max(0, (last.end / audioDuration) * 100));
-  const width = Math.min(100 - left, (span / audioDuration) * 100);
-  return { freezeSeconds, overlayLeftPct: left, overlayWidthPct: width };
+  return turns.length ? { turns, recordingEndedAtUnix } : null;
 }
 
 export default function SessionPlayback() {
@@ -117,7 +88,8 @@ export default function SessionPlayback() {
   const [activeIdx, setActiveIdx] = useState(-1);
   const [playing, setPlaying] = useState(false);
 
-  turnsRef.current = session?.turns ?? [];
+  const turns = session?.turns ?? [];
+  turnsRef.current = turns;
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +97,7 @@ export default function SessionPlayback() {
       try {
         const res = await fetch(`/sessions/${id}.json`);
         if (!res.ok) throw new Error(`Transcript not found (${res.status})`);
-        const parsed = parseTranscriptPayload((await res.json()) as TranscriptPayload);
+        const parsed = parseTranscript((await res.json()) as TranscriptPayload);
         if (!parsed) throw new Error("Transcript is empty or invalid");
         if (!cancelled) {
           setSession(parsed);
@@ -141,13 +113,7 @@ export default function SessionPlayback() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const seek = useCallback((start: number) => {
-    const ws = wsRef.current;
-    if (!ws || duration <= 0) return;
-    ws.seekTo(Math.min(1, Math.max(0, start / duration)));
-  }, [duration]);
+  }, [id]);
 
   useEffect(() => {
     const el = waveformRef.current;
@@ -179,9 +145,9 @@ export default function SessionPlayback() {
       setDuration(ws.getDuration());
     });
     ws.on("timeupdate", (time) => {
-      const turns = turnsRef.current;
-      if (!turns.length) return;
-      const idx = turns.findIndex((t) => time >= t.start && time < t.end);
+      const list = turnsRef.current;
+      if (!list.length) return;
+      const idx = list.findIndex((t) => time >= t.start && time < t.end);
       if (idx !== activeIdxRef.current) {
         activeIdxRef.current = idx;
         setActiveIdx(idx);
@@ -198,18 +164,19 @@ export default function SessionPlayback() {
       ws.destroy();
       wsRef.current = null;
     };
-  }, []);
+  }, [id]);
 
-  const freeze = useMemo(
-    () =>
-      session
-        ? freezeOverlay(session.turns, session.recordingEndedAtUnix, session.timelineBaseUnix, duration)
-        : null,
-    [session, duration]
-  );
+  const freeze =
+    ready && duration > 0
+      ? detectFreezeTail(turns, session?.recordingEndedAtUnix ?? null, duration)
+      : null;
+  const freezePct = freeze ? freezeOverlayPercentages(freeze.startsAtRel, duration) : null;
 
-  const turns = session?.turns ?? [];
-  const assistantMarkers = useMemo(() => turns.filter((t) => t.role === "assistant"), [turns]);
+  const seekTo = (start: number) => {
+    const ws = wsRef.current;
+    if (!ws || duration <= 0) return;
+    ws.seekTo(Math.min(1, Math.max(0, start / duration)));
+  };
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6">
@@ -224,12 +191,8 @@ export default function SessionPlayback() {
 
       {freeze && (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-          <strong className="font-medium">Freeze detected</strong>
-          <span className="text-amber-200/90">
-            {" "}
-            — No assistant reply after last user turn; gap to call end (&gt;{FREEZE_MIN_DURATION_SECONDS}s):{" "}
-            {formatTime(freeze.freezeSeconds)} ({ms(freeze.freezeSeconds)})
-          </span>
+          <strong className="font-medium">Freeze</strong> from {formatTime(freeze.startsAtRel)} —{" "}
+          {ms(freeze.triggerGapSeconds)} before next speech or call end (&gt;{DEFAULT_FREEZE_MIN_GAP_SECONDS}s).
         </div>
       )}
 
@@ -244,33 +207,34 @@ export default function SessionPlayback() {
         <div className="relative">
           <div ref={waveformRef} className="rounded-md border border-slate-800 bg-slate-950" />
 
-          {ready && duration > 0 && freeze && freeze.overlayWidthPct > 0 && (
+          {freeze && freezePct && (
             <div
               className="pointer-events-none absolute inset-y-0 bg-amber-500/15"
-              style={{ left: `${freeze.overlayLeftPct}%`, width: `${freeze.overlayWidthPct}%` }}
-              title="No assistant audio (freeze)"
+              style={{ left: `${freezePct.leftPct}%`, width: `${freezePct.widthPct}%` }}
             />
           )}
 
-          {ready && duration > 0 && assistantMarkers.length > 0 && (
+          {ready && duration > 0 && (
             <div className="pointer-events-none absolute inset-0">
-              {assistantMarkers.map((turn) => {
-                const leftPct = Math.min(100, Math.max(0, (turn.start / duration) * 100));
-                return (
-                  <div
-                    key={turn.id}
-                    className="absolute inset-y-0"
-                    style={{ left: `${leftPct}%`, transform: "translateX(-0.5px)" }}
-                  >
-                    {turn.latency !== undefined && (
-                      <span className="absolute -top-7 -translate-x-1/2 text-xs font-semibold text-yellow-400 sm:text-sm">
-                        {ms(turn.latency)}
-                      </span>
-                    )}
-                    <span className="block h-full w-px bg-rose-500" />
-                  </div>
-                );
-              })}
+              {turns
+                .filter((t) => t.role === "assistant")
+                .map((turn) => {
+                  const leftPct = Math.min(100, Math.max(0, (turn.start / duration) * 100));
+                  return (
+                    <div
+                      key={turn.id}
+                      className="absolute inset-y-0"
+                      style={{ left: `${leftPct}%`, transform: "translateX(-0.5px)" }}
+                    >
+                      {turn.latency !== undefined && (
+                        <span className="absolute -top-7 -translate-x-1/2 text-xs font-semibold text-yellow-400 sm:text-sm">
+                          {ms(turn.latency)}
+                        </span>
+                      )}
+                      <span className="block h-full w-px bg-rose-500" />
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
@@ -284,11 +248,11 @@ export default function SessionPlayback() {
                 key={turn.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => seek(turn.start)}
+                onClick={() => seekTo(turn.start)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    seek(turn.start);
+                    seekTo(turn.start);
                   }
                 }}
                 className={cn(
