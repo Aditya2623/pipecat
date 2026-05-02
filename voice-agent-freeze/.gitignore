@@ -219,6 +219,7 @@ __marimo__/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+!frontend/src/lib/
 frontend/dist/
 frontend/.vite/
 frontend/.turbo/
